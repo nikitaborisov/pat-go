@@ -46,9 +46,22 @@ func TestDLEQ(t *testing.T) {
 	p, err := ComputeProof(A, B, svec, group.Ristretto255, []byte("DLEQ test proof"))
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
-	result, err := VerifyProofCompact(p, A, B, group.Ristretto255, []byte("DLEQ test proof"))
+	encodedProof, err := p.MarshalCompact()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	decodedProof, err := UnmarshalProofCompact(encodedProof, group.Ristretto255)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	result, err := VerifyProofCompact(decodedProof, A, B, group.Ristretto255, []byte("DLEQ test proof"))
 	if !result {
 		t.Errorf("Proof verification failed: %s", err)
 	}

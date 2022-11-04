@@ -22,6 +22,71 @@ type DLEQProof struct {
 	Responses []group.Scalar
 }
 
+func (p DLEQProof) MarshalCompact() ([] byte, error) {
+	b := cryptobyte.NewBuilder(nil)
+	cEnc, err := p.Challenge.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	b.AddBytes(cEnc)
+
+	b.AddUint16(uint16(len(p.Responses)))
+	for _, ri := range p.Responses {
+		riEnc, err := ri.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		b.AddBytes(riEnc)
+	}
+	return b.Bytes()
+}
+
+func UnmarshalProofCompact(encodedProof [] byte, g group.Group) (DLEQProof, error) {
+	scalarLen := g.Params().ScalarLength
+	input := cryptobyte.String(encodedProof)
+
+	challengeEnc := make([]byte, scalarLen)
+
+	if !input.ReadBytes(&challengeEnc, int(scalarLen)) {
+		return DLEQProof{}, fmt.Errorf("cannot read challenge")
+	}
+
+	challenge := g.NewScalar()
+	err := challenge.UnmarshalBinary(challengeEnc)
+	if err != nil {
+		return DLEQProof{}, err
+	}
+
+	var responseLen uint16
+
+	if !input.ReadUint16(&responseLen) {
+		return DLEQProof{}, fmt.Errorf("error reading response length")
+	}
+
+	responses := make([] group.Scalar, responseLen)
+
+	for i := range responses {
+		responseEnc := make([]byte, scalarLen)
+		if !input.ReadBytes(&responseEnc, int(scalarLen)) {
+			return DLEQProof{}, fmt.Errorf("error reading response %d", i)
+		}
+		responses[i] = g.NewScalar()
+		err := responses[i].UnmarshalBinary(responseEnc)
+		if err != nil {
+			return DLEQProof{}, err
+		}
+	}
+
+	if !input.Empty() {
+		return DLEQProof{}, fmt.Errorf("unparsed bytes leftover")
+	}
+
+	return DLEQProof {
+		Challenge: challenge,
+		Responses: responses,
+	}, nil
+}
+
 // XXX: eliminate the last parameter when upgrading to the latest version of circl/group that has a .Group() method
 func scalarVectorElementMatrixMul(x []group.Scalar, B [][]group.Element, g group.Group) []group.Element {
 	result := make([]group.Element, len(B))
@@ -98,7 +163,10 @@ func computeChallenge(A []group.Element, B [][]group.Element, commitments []grou
 		b.AddBytes(Cienc)
 	}
 
-	hashInput := b.BytesOrPanic()
+	hashInput, err := b.Bytes()
+	if err != nil {
+		return nil, err
+	}
 
 	return g.HashToScalar(hashInput, dst), nil
 }
